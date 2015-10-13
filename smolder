@@ -1,9 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import yaml
 import sys
+import fileinput
 from smolder import tcp_test
 from smolder.charcoal import Charcoal
+from urlparse import urlparse
 import logging
 import argh
 from yaml.parser import ParserError
@@ -71,7 +73,6 @@ SCHEMA = {
 
 @dispatch_command
 @arg('host', help='IP address or DNS name to run tests against', default=os.environ.get('TEST_HOST'))
-@arg('testfile', default=os.environ.get('TEST_FILE'), metavar='TEST_FILE', help='The json file that details the tests to execute')
 @arg('--force', help='Use http methods that can potentially change data (PUT, POST, DELETE, etc. ie !GET)', default=False)
 def smolder_cli(**kwargs):
     """ Parse CLI args and if valid dispatch to lower methods """
@@ -81,7 +82,7 @@ def smolder_cli(**kwargs):
 
     # Load the test specification file, parse the json and create a 'tests' object
     try:
-        myfile = open(kwargs['testfile'])
+        myfile = "".join(fileinput.input(sys.argv[2:]))
         test_input = yaml.load(myfile)
         tests = test_input['tests']
         try:
@@ -112,14 +113,17 @@ def smolder_cli(**kwargs):
         sys.exit(2)
 
     LOG.debug("Beginning default TCP test")
-    port = getattr(tests[0], 'port', 80)
-    tcp_test(str(kwargs['host']), port)
+    protocol = tests[0].get('protocol', 'http')
+    uri = urlparse(protocol + "://" + kwargs['host'])
+    host = uri.hostname
+    port = uri.port or tests[0].get('port', 80)
+    tcp_test(str(host), port)
     LOG.debug("Passed default TCP test")
     print("Preparing to execute {0} tests".format(len(tests)))
     # Iterate through all the tests
 
     for test in test_input['tests']:
-        test_obj = Charcoal(test=test, host=kwargs['host'])
+        test_obj = Charcoal(test=test, host=host)
         print(str(test_obj))
         total_failed_tests += test_obj.failed
         total_passed_tests += test_obj.passed
